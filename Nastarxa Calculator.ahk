@@ -946,7 +946,7 @@ CopyLaps(app) {
 
 BuildLapExportText(app) {
     stats := BuildLapExportStats(app.lapRows)
-    total := app.lapRows.Length > 0 ? FormatDuration(app.lapRows[app.lapRows.Length].elapsedMs) : "0:00.000"
+    total := app.lapRows.Length > 0 ? FormatDurationForExport(app.lapRows[app.lapRows.Length].elapsedMs) : "00:00:00"
     text := "File: Nastarxa Calculator Export`r`n"
     text .= "Work Time: " total "`r`n"
     text .= "Total Laps: " stats.totalLaps "`r`n"
