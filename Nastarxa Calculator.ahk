@@ -1,4 +1,4 @@
-#Requires AutoHotkey v2.0
+﻿#Requires AutoHotkey v2.0
 #SingleInstance Force
 Persistent
 
@@ -7,7 +7,6 @@ if FileExist(A_ScriptDir "\Calculator.ico")
 
 #Include "src/core/expression_eval.ahk"
 #Include "src/core/calculator_state.ahk"
-#Include "src/core/timer_laps.ahk"
 
 global App := InitCalculatorApp()
 BuildCalculatorGui(App)
@@ -48,18 +47,13 @@ InitCalculatorApp() {
         actionControls: Map(),
         hoverHwnd: 0,
         pressedHwnd: 0,
-        lapText: "",
-        lapRows: [],
         calcHistory: [],
         undoStack: [],
         redoStack: [],
-        lapUndoStack: [],
-        lapRedoStack: [],
         memoryValue: 0,
         memorySet: false,
         isPinned: false,
         historyGui: 0,
-        lapsGui: 0,
         memoryGui: 0,
         helpGui: 0,
         storageDir: A_ScriptDir "\data",
@@ -80,29 +74,30 @@ BuildCalculatorGui(app) {
     app.controls["display"] := g.AddText("x18 y54 w308 h62 Right cF8FAFC Background000000", "0")
     app.controls["display"].SetFont("s32 Bold", "Consolas")
     app.controls["display"].OnEvent("Click", (*) => EditExpression(app))
-    app.controls["status"] := g.AddText("x18 y128 w308 h20 Right c6B7280 Background000000", "Drop timer data or image")
+    app.controls["status"] := g.AddText("x18 y128 w308 h20 Right c6B7280 Background000000", "Ready")
 
     LoadAppPersistence(app)
 
     app.controls["historyButton"] := AddActionText(g, "x18 y166 w42 h30", "H", "84CC16", "111315", "s12 Bold")
     app.controls["historyButton"].OnEvent("Click", (*) => ShowHistoryWindow(app))
 
-    app.controls["lapsButton"] := AddActionText(g, "x70 y166 w42 h30", "L", "38BDF8", "111315", "s12 Bold")
-    app.controls["lapsButton"].OnEvent("Click", (*) => HandleLapsButton(app))
 
-    app.controls["undoButton"] := AddActionText(g, "x122 y166 w42 h30 0x200", "⤺", "FACC15", "111315", "s18")
+    app.controls["undoButton"] := AddActionText(g, "x70 y166 w42 h30 0x200", "⤺", "FACC15", "111315", "s18")
     app.controls["undoButton"].SetFont("s17 Bold", "Consolas")
     app.controls["undoButton"].OnEvent("Click", (*) => UndoCalculator(app))
 
-    app.controls["redoButton"] := AddActionText(g, "x174 y166 w42 h30 0x200", "⤻", "FACC15", "111315", "s18")
+    app.controls["redoButton"] := AddActionText(g, "x122 y166 w42 h30 0x200", "⤻", "FACC15", "111315", "s18")
     app.controls["redoButton"].SetFont("s17 Bold", "Consolas")
     app.controls["redoButton"].OnEvent("Click", (*) => RedoCalculator(app))
 
-    app.controls["memoryButton"] := AddActionText(g, "x226 y166 w32 h30", "M", "C084FC", "111315", "s12 Bold")
+    app.controls["memoryButton"] := AddActionText(g, "x174 y166 w42 h30", "M", "C084FC", "111315", "s12 Bold")
     app.controls["memoryButton"].OnEvent("Click", (*) => ShowMemoryWindow(app))
 
-    app.controls["pinButton"] := AddActionText(g, "x268 y166 w58 h30", "Pin", "E0E7FF", "111315", "s9 Bold")
+    app.controls["pinButton"] := AddActionText(g, "x226 y166 w48 h30", "Pin", "E0E7FF", "111315", "s9 Bold")
     app.controls["pinButton"].OnEvent("Click", (*) => TogglePin(app))
+
+    app.controls["hideButton"] := AddActionText(g, "x284 y166 w42 h30", "Hide", "FCA5A5", "111315", "s8 Bold")
+    app.controls["hideButton"].OnEvent("Click", (*) => HideMainWindow(app))
 
     app.controls["divider"] := g.AddText("x18 y212 w308 h1 Background202124", "")
 
@@ -129,7 +124,6 @@ BuildCalculatorGui(app) {
 
     g.OnEvent("Close", (*) => ExitApp())
     g.OnEvent("Size", (guiObj, minMax, width, height) => ResizeCalculator(app, width, height))
-    g.OnEvent("DropFiles", (guiObj, guiCtrlObj, fileArray, x, y) => HandleDroppedFiles(app, fileArray))
     InitActionFeedback(app)
     ApplyPinnedState(app)
     RefreshCalculatorUi(app)
@@ -148,6 +142,11 @@ ToggleMainWindow(app) {
 
     app.gui.Show()
     WinActivate("ahk_id " app.gui.Hwnd)
+}
+
+HideMainWindow(app) {
+    if IsObject(app.gui)
+        app.gui.Hide()
 }
 
 AddActionText(guiObj, pos, label, fg, bg, fontOptions) {
@@ -286,11 +285,11 @@ ResizeCalculator(app, width, height) {
     app.controls["display"].Move(18, 54, rightW, 62)
     app.controls["status"].Move(18, 128, rightW, 20)
     app.controls["historyButton"].Move(18, 166, 42, 30)
-    app.controls["lapsButton"].Move(70, 166, 42, 30)
-    app.controls["undoButton"].Move(122, 166, 42, 30)
-    app.controls["redoButton"].Move(174, 166, 42, 30)
-    app.controls["memoryButton"].Move(width - 118, 166, 32, 30)
-    app.controls["pinButton"].Move(width - 76, 166, 58, 30)
+    app.controls["undoButton"].Move(70, 166, 42, 30)
+    app.controls["redoButton"].Move(122, 166, 42, 30)
+    app.controls["memoryButton"].Move(174, 166, 42, 30)
+    app.controls["pinButton"].Move(width - 118, 166, 48, 30)
+    app.controls["hideButton"].Move(width - 60, 166, 42, 30)
     app.controls["divider"].Move(18, 212, rightW, 1)
 }
 
@@ -442,89 +441,13 @@ CopyCalculatorLine(app) {
     app.controls["status"].Value := "Copied"
 }
 
-ImportLapData(app) {
-    file := FileSelect(1, A_ScriptDir, "Import timer lap data", "Timer data (*.txt; *.csv; *.tsv; *.log; *.png; *.jpg; *.jpeg; *.bmp)")
-    if (file = "")
-        return
 
-    LoadLapFile(app, file)
-}
 
-HandleLapsButton(app) {
-    if (app.lapRows.Length = 0) {
-        ImportLapData(app)
-        return
-    }
 
-    ShowLapsWindow(app)
-}
 
-ApplyLapData(app, raw) {
-    app.lapText := raw
-    app.lapRows := ParseTimerLaps(raw)
-}
 
-HandleDroppedFiles(app, fileArray) {
-    if (fileArray.Length < 1)
-        return
 
-    LoadLapFile(app, fileArray[1])
-}
 
-LoadLapFile(app, file) {
-    SplitPath(file, , , &ext)
-    ext := StrLower(ext)
-
-    try {
-        if IsImageExtension(ext)
-            raw := ReadTimerImageText(file)
-        else
-            raw := FileRead(file, "UTF-8")
-    } catch as err {
-        MsgBox("Could not read lap data.`n`n" err.Message, "Lap Import", "Iconx")
-        return
-    }
-
-    PushLapUndoSnapshot(app)
-    ApplyLapData(app, raw)
-    PersistAppState(app)
-    ShowLapsWindow(app)
-    RefreshLapsWindow(app)
-
-    if (app.lapRows.Length = 0 && IsImageExtension(ext))
-        app.controls["status"].Value := "OCR ran, but no lap times were readable"
-    else
-        app.controls["status"].Value := "Loaded lap data: " app.lapRows.Length " row(s)"
-}
-
-IsImageExtension(ext) {
-    return ext = "png" || ext = "jpg" || ext = "jpeg" || ext = "bmp"
-}
-
-ReadTimerImageText(file) {
-    script := A_ScriptDir "\src\tools\ocr_timer_image.ps1"
-    if !FileExist(script)
-        throw Error("Missing OCR helper: " script)
-
-    stamp := A_TickCount
-    outFile := A_Temp "\nastarxa_calc_ocr_" stamp ".txt"
-    errFile := A_Temp "\nastarxa_calc_ocr_" stamp ".err.txt"
-    cmd := "powershell -NoProfile -ExecutionPolicy Bypass -File " QuoteArg(script) " " QuoteArg(file) " > " QuoteArg(outFile) " 2> " QuoteArg(errFile)
-    exitCode := RunWait(A_ComSpec " /c " cmd, , "Hide")
-    raw := FileExist(outFile) ? FileRead(outFile, "UTF-8") : ""
-    err := FileExist(errFile) ? FileRead(errFile, "UTF-8") : ""
-    try FileDelete(outFile)
-    try FileDelete(errFile)
-
-    if (exitCode != 0)
-        throw Error(err != "" ? err : "Image OCR failed.")
-
-    return raw
-}
-
-QuoteArg(value) {
-    return '"' StrReplace(value, '"', '\"') '"'
-}
 
 LoadAppPersistence(app) {
     try DirCreate(app.storageDir)
@@ -539,11 +462,6 @@ LoadAppPersistence(app) {
         }
     }
 
-    lapsFile := app.storageDir "\last_laps_raw.txt"
-    if FileExist(lapsFile) {
-        app.lapText := FileRead(lapsFile, "UTF-8")
-        app.lapRows := ParseTimerLaps(app.lapText)
-    }
 
     settingsFile := app.storageDir "\settings.ini"
     if FileExist(settingsFile) {
@@ -566,13 +484,6 @@ PersistAppState(app) {
         FileAppend(historyText, historyFile, "UTF-8")
     }
 
-    lapsFile := app.storageDir "\last_laps_raw.txt"
-    try {
-        if FileExist(lapsFile)
-            FileDelete(lapsFile)
-        if (app.lapText != "")
-            FileAppend(app.lapText, lapsFile, "UTF-8")
-    }
 
     settingsFile := app.storageDir "\settings.ini"
     try {
@@ -595,8 +506,6 @@ PushUndoSnapshot(app) {
 
 UndoCalculator(app) {
     if (app.undoStack.Length = 0) {
-        if UndoLapImport(app)
-            return
         app.controls["status"].Value := "Nothing to undo"
         return
     }
@@ -610,8 +519,6 @@ UndoCalculator(app) {
 
 RedoCalculator(app) {
     if (app.redoStack.Length = 0) {
-        if RedoLapImport(app)
-            return
         app.controls["status"].Value := "Nothing to redo"
         return
     }
@@ -630,38 +537,8 @@ SerializeCalculatorState(state) {
     return text "##" state.current "##" state.result "##" (state.justEvaluated ? "1" : "0") "##" state.error
 }
 
-PushLapUndoSnapshot(app) {
-    app.lapUndoStack.Push({ text: app.lapText })
-    app.lapRedoStack := []
-    while (app.lapUndoStack.Length > 20)
-        app.lapUndoStack.RemoveAt(1)
-}
 
-UndoLapImport(app) {
-    if (app.lapUndoStack.Length = 0)
-        return false
-    app.lapRedoStack.Push({ text: app.lapText })
-    snap := app.lapUndoStack.Pop()
-    app.lapText := snap.text
-    app.lapRows := app.lapText = "" ? [] : ParseTimerLaps(app.lapText)
-    PersistAppState(app)
-    RefreshLapsWindow(app)
-    app.controls["status"].Value := "Undo lap import"
-    return true
-}
 
-RedoLapImport(app) {
-    if (app.lapRedoStack.Length = 0)
-        return false
-    app.lapUndoStack.Push({ text: app.lapText })
-    snap := app.lapRedoStack.Pop()
-    app.lapText := snap.text
-    app.lapRows := app.lapText = "" ? [] : ParseTimerLaps(app.lapText)
-    PersistAppState(app)
-    RefreshLapsWindow(app)
-    app.controls["status"].Value := "Redo lap import"
-    return true
-}
 
 CloneCalculatorState(state) {
     tokens := []
@@ -703,7 +580,7 @@ RefreshCalculatorUi(app) {
     else if (app.state.justEvaluated)
         app.controls["status"].Value := "Result saved to history"
     else
-        app.controls["status"].Value := "Drop timer data or image anywhere"
+        app.controls["status"].Value := "Ready"
 }
 
 ClearRecallPreview(app) {
@@ -903,183 +780,15 @@ HandleMemoryAction(app, label) {
         app.memoryGui.controls["value"].Value := app.memorySet ? FormatCalcNumber(app.memoryValue) : "Empty"
 }
 
-ShowLapsWindow(app) {
-    if !IsObject(app.lapsGui) {
-        app.lapsGui := Gui("+Owner" app.gui.Hwnd " +E0x10", "Timer Laps")
-        app.lapsGui.BackColor := "101112"
-        app.lapsGui.SetFont("s10", "Segoe UI")
-        app.lapsGui.AddText("x16 y14 w300 h24 cA7D66D Background101112", "Laps")
-        app.lapsGui.controls := Map()
-        app.lapsGui.controls["summary"] := app.lapsGui.AddEdit("x16 y42 w380 h86 cDDE7C7 Background181A1D -Wrap ReadOnly", "")
-        app.lapsGui.controls["list"] := app.lapsGui.AddEdit("x16 y138 w380 h258 cFFFFFF Background181A1D -Wrap ReadOnly", "")
-        copyBtn := app.lapsGui.AddButton("x16 y420 w64 h32 cFFFFFF Background24272B", "Copy")
-        copyBtn.OnEvent("Click", (*) => CopyLaps(app))
-        txtBtn := app.lapsGui.AddButton("x86 y420 w64 h32 cFFFFFF Background24272B", "TXT")
-        txtBtn.OnEvent("Click", (*) => ExportLapsText(app))
-        pngBtn := app.lapsGui.AddButton("x156 y420 w64 h32 cFFFFFF Background24272B", "PNG")
-        pngBtn.OnEvent("Click", (*) => ExportLapsPng(app))
-        importBtn := app.lapsGui.AddButton("x226 y420 w74 h32 cFFFFFF Background24272B", "Import")
-        importBtn.OnEvent("Click", (*) => ImportLapData(app))
-        closeBtn := app.lapsGui.AddButton("x306 y420 w90 h32 cFFFFFF Background24272B", "Close")
-        closeBtn.OnEvent("Click", (*) => app.lapsGui.Hide())
-        app.lapsGui.controls["close"] := closeBtn
-        app.lapsGui.OnEvent("DropFiles", (guiObj, guiCtrlObj, fileArray, x, y) => HandleDroppedFiles(app, fileArray))
-        app.lapsGui.OnEvent("Close", (*) => app.lapsGui.Hide())
-    }
-    RefreshLapsWindow(app)
-    app.lapsGui.Show("w412 h468")
-    app.lapsGui.controls["close"].Focus()
-}
 
-RefreshLapsWindow(app) {
-    if !IsObject(app.lapsGui)
-        return
-    app.lapsGui.controls["summary"].Value := RenderLapSummary(app.lapRows)
-    app.lapsGui.controls["list"].Value := RenderLapDifferences(app.lapRows)
-}
 
-CopyLaps(app) {
-    A_Clipboard := RenderLapSummary(app.lapRows) "`r`n`r`n" RenderLapDifferences(app.lapRows)
-    if IsObject(app.lapsGui)
-        app.lapsGui.Title := "Timer Laps - copied"
-}
 
-BuildLapExportText(app) {
-    stats := BuildLapExportStats(app.lapRows)
-    total := app.lapRows.Length > 0 ? FormatDurationForExport(app.lapRows[app.lapRows.Length].elapsedMs) : "00:00:00"
-    text := "File: Nastarxa Calculator Export`r`n"
-    text .= "Work Time: " total "`r`n"
-    text .= "Total Laps: " stats.totalLaps "`r`n"
-    text .= "Fastest: " stats.fastestText "`r`n"
-    text .= "Slowest: " stats.slowestText "`r`n"
-    text .= "Average: " stats.averageText "`r`n"
-    text .= "Laps:`r`n"
-    for _, row in app.lapRows {
-        diff := row.diffMs = "" ? "--" : FormatSignedDurationForExport(row.diffMs)
-        text .= "  " row.name "  " FormatDurationForExport(row.elapsedMs) "  d " diff "`r`n"
-    }
-    text .= "------------------`r`n"
-    text .= "Day: " FormatTime(, "dddd") "`r`n"
-    text .= "Save Time: " FormatTime(, "HH:mm:ss") "`r`n"
-    text .= "Date: " FormatTime(, "yyyy-MM-dd") "`r`n"
-    return text
-}
 
-BuildLapExportStats(rows) {
-    fastest := ""
-    slowest := ""
-    totalDiff := 0
-    diffCount := 0
 
-    for _, row in rows {
-        if (row.diffMs = "")
-            continue
-        if (fastest = "" || row.diffMs < fastest.diffMs)
-            fastest := row
-        if (slowest = "" || row.diffMs > slowest.diffMs)
-            slowest := row
-        totalDiff += row.diffMs
-        diffCount += 1
-    }
 
-    averageText := diffCount > 0 ? FormatDurationForExport(Round(totalDiff / diffCount)) : "--"
-    fastestText := IsObject(fastest) ? fastest.name " d " FormatSignedDurationForExport(fastest.diffMs) : "--"
-    slowestText := IsObject(slowest) ? slowest.name " d " FormatSignedDurationForExport(slowest.diffMs) : "--"
 
-    return {
-        totalLaps: rows.Length,
-        fastestText: fastestText,
-        slowestText: slowestText,
-        averageText: averageText
-    }
-}
 
-FormatDurationForExport(ms) {
-    totalSeconds := Floor(Abs(ms) / 1000)
-    seconds := Mod(totalSeconds, 60)
-    minutes := Mod(Floor(totalSeconds / 60), 60)
-    hours := Floor(totalSeconds / 3600)
-    return Format("{:02}:{:02}:{:02}", hours, minutes, seconds)
-}
 
-FormatSignedDurationForExport(ms) {
-    if (ms = "")
-        return "--"
-    sign := ms >= 0 ? "+" : "-"
-    return sign FormatDurationForExport(ms)
-}
-
-ExportLapsText(app) {
-    if (app.lapRows.Length = 0) {
-        app.controls["status"].Value := "No lap data to export"
-        return
-    }
-
-    path := FileSelect("S16", DefaultExportPath("laps", "txt"), "Export Laps Text", "Text (*.txt)")
-    if (path = "")
-        return
-    if !RegExMatch(path, "i)\.txt$")
-        path .= ".txt"
-
-    try {
-        if FileExist(path)
-            FileDelete(path)
-        FileAppend(BuildLapExportText(app), path, "UTF-8")
-        app.controls["status"].Value := "Exported laps text"
-    } catch as err {
-        MsgBox("Could not export text.`n`n" err.Message, "Export Laps", "Iconx")
-    }
-}
-
-ExportLapsPng(app) {
-    if (app.lapRows.Length = 0) {
-        app.controls["status"].Value := "No lap data to export"
-        return
-    }
-
-    path := FileSelect("S16", DefaultExportPath("laps", "png"), "Export Laps PNG", "PNG (*.png)")
-    if (path = "")
-        return
-    if !RegExMatch(path, "i)\.png$")
-        path .= ".png"
-
-    tempText := A_Temp "\nastarxa_laps_export_" A_TickCount ".txt"
-    script := A_ScriptDir "\src\tools\render_laps_png.ps1"
-    try {
-        if FileExist(tempText)
-            FileDelete(tempText)
-        FileAppend(BuildLapExportText(app), tempText, "UTF-8")
-        exitCode := RunWait(A_ComSpec " /c powershell -NoProfile -ExecutionPolicy Bypass -File " QuoteArg(script) " " QuoteArg(tempText) " " QuoteArg(path), , "Hide")
-        if (exitCode != 0)
-            throw Error("PNG renderer failed.")
-        app.controls["status"].Value := "Exported laps PNG"
-    } catch as err {
-        MsgBox("Could not export PNG.`n`n" err.Message, "Export Laps", "Iconx")
-    } finally {
-        try FileDelete(tempText)
-    }
-}
-
-DefaultExportPath(prefix, extension) {
-    folder := A_MyDocuments
-    if (folder = "")
-        folder := A_ScriptDir
-    try DirCreate(folder)
-
-    stamp := FormatTime(, "yyyy-MM-dd_HH-mm-ss")
-    baseName := prefix "_" stamp
-    candidate := folder "\" baseName "." extension
-    if !FileExist(candidate)
-        return candidate
-
-    Loop 99 {
-        candidate := folder "\" baseName "_" Format("{:02}", A_Index) "." extension
-        if !FileExist(candidate)
-            return candidate
-    }
-
-    return folder "\" baseName "_" A_TickCount "." extension
-}
 
 ShowHelpWindow(app) {
     if IsObject(app.helpGui) {
@@ -1102,20 +811,18 @@ ShowHelpWindow(app) {
         . "Ctrl+Shift+Z       Redo`r`n"
         . "Ctrl+T             Pin always-on-top`r`n"
         . "Ctrl+C             Copy current line`r`n"
-        . "F1                 Help`r`n`r`n"
+        . "F1                 Help`r`n"
+        . "F12                Show / hide calculator`r`n`r`n"
         . "Buttons`r`n"
         . "H                  Open calculation history`r`n"
-        . "L                  Open/import timer laps`r`n"
-        . "⤺ / ⤻              Undo / Redo`r`n"
+        . "Hide               Hide the calculator window`r`n"
         . "M                  Memory buttons: MC, MR, M+, M-, MS`r`n"
-        . "Pin                Toggle always-on-top`r`n`r`n"
+        . "Pin                Toggle always-on-top`r`n"
+        . "⤺ / ⤻              Undo / Redo`r`n`r`n"
         . "Editing`r`n"
         . "Click the display or expression history to edit the expression.`r`n"
         . "History rows select first, then Copy Sel or Load.`r`n`r`n"
-        . "Timer Data`r`n"
-        . "Drag .txt/.png/.jpg timer data onto the calculator or Laps window.`r`n"
-        . "Laps can export TXT or a PNG styled like the timer example.`r`n"
-        . "The app saves history, memory, pin state, and the last lap import in data\."
+        . "The app saves history, memory, and pin state in data\."
     app.helpGui.AddEdit("x16 y46 w380 h300 cFFFFFF Background181A1D -Wrap ReadOnly", helpText)
     closeBtn := app.helpGui.AddButton("x306 y360 w90 h32 cFFFFFF Background24272B", "Close")
     closeBtn.OnEvent("Click", (*) => app.helpGui.Hide())
