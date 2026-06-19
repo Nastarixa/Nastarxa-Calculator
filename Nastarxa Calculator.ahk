@@ -135,7 +135,7 @@ ToggleMainWindow(app) {
     if !IsObject(app.gui)
         return
 
-    if WinExist("ahk_id " app.gui.Hwnd) && WinActive("ahk_id " app.gui.Hwnd) {
+    if WinExist("ahk_id " app.gui.Hwnd) && DllCall("IsWindowVisible", "Ptr", app.gui.Hwnd) {
         app.gui.Hide()
         return
     }
