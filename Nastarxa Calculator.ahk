@@ -79,25 +79,31 @@ BuildCalculatorGui(app) {
     LoadAppPersistence(app)
 
     app.controls["historyButton"] := AddActionText(g, "x18 y166 w42 h30", "H", "84CC16", "111315", "s12 Bold")
-    app.controls["historyButton"].OnEvent("Click", (*) => ShowHistoryWindow(app))
+    app.controls["historyButton"]._clickHandler := (*) => ShowHistoryWindow(app)
+    app.controls["historyButton"].OnEvent("Click", app.controls["historyButton"]._clickHandler)
 
 
     app.controls["undoButton"] := AddActionText(g, "x70 y166 w42 h30 0x200", "⤺", "FACC15", "111315", "s18")
     app.controls["undoButton"].SetFont("s17 Bold", "Consolas")
-    app.controls["undoButton"].OnEvent("Click", (*) => UndoCalculator(app))
+    app.controls["undoButton"]._clickHandler := (*) => UndoCalculator(app)
+    app.controls["undoButton"].OnEvent("Click", app.controls["undoButton"]._clickHandler)
 
     app.controls["redoButton"] := AddActionText(g, "x122 y166 w42 h30 0x200", "⤻", "FACC15", "111315", "s18")
     app.controls["redoButton"].SetFont("s17 Bold", "Consolas")
-    app.controls["redoButton"].OnEvent("Click", (*) => RedoCalculator(app))
+    app.controls["redoButton"]._clickHandler := (*) => RedoCalculator(app)
+    app.controls["redoButton"].OnEvent("Click", app.controls["redoButton"]._clickHandler)
 
     app.controls["memoryButton"] := AddActionText(g, "x174 y166 w42 h30", "M", "C084FC", "111315", "s12 Bold")
-    app.controls["memoryButton"].OnEvent("Click", (*) => ShowMemoryWindow(app))
+    app.controls["memoryButton"]._clickHandler := (*) => ShowMemoryWindow(app)
+    app.controls["memoryButton"].OnEvent("Click", app.controls["memoryButton"]._clickHandler)
 
     app.controls["pinButton"] := AddActionText(g, "x226 y166 w48 h30", "Pin", "E0E7FF", "111315", "s9 Bold")
-    app.controls["pinButton"].OnEvent("Click", (*) => TogglePin(app))
+    app.controls["pinButton"]._clickHandler := (*) => TogglePin(app)
+    app.controls["pinButton"].OnEvent("Click", app.controls["pinButton"]._clickHandler)
 
     app.controls["hideButton"] := AddActionText(g, "x284 y166 w42 h30", "Hide", "FCA5A5", "111315", "s8 Bold")
-    app.controls["hideButton"].OnEvent("Click", (*) => HideMainWindow(app))
+    app.controls["hideButton"]._clickHandler := (*) => HideMainWindow(app)
+    app.controls["hideButton"].OnEvent("Click", app.controls["hideButton"]._clickHandler)
 
     app.controls["divider"] := g.AddText("x18 y212 w308 h1 Background202124", "")
 
@@ -115,7 +121,8 @@ BuildCalculatorGui(app) {
         for colIndex, label in row {
             colors := ButtonColors(label)
             btn := AddActionText(g, "x" x " y" y " w64 h54", label, colors.fg, colors.bg, "s18 Bold")
-            btn.OnEvent("Click", BindCalculatorButton(app, label))
+            btn._clickHandler := BindCalculatorButton(app, label)
+            btn.OnEvent("Click", btn._clickHandler)
             app.controls["key_" rowIndex "_" colIndex] := btn
             x += 82
         }
@@ -182,15 +189,19 @@ ButtonColors(label) {
 
 InitActionFeedback(app) {
     app.actionControls := Map()
+    app.clickActions := Map()
     for _, ctrl in app.controls {
         if IsObject(ctrl) && ctrl.HasOwnProp("_normalBg")
             app.actionControls[ctrl.Hwnd] := ctrl
+        if IsObject(ctrl) && ctrl.HasOwnProp("_clickHandler")
+            app.clickActions[ctrl.Hwnd] := ctrl._clickHandler
     }
 
     OnMessage(0x200, (wParam, lParam, msg, hwnd) => ActionMouseMove(app, hwnd))
     OnMessage(0x2A3, (wParam, lParam, msg, hwnd) => ActionMouseLeave(app, hwnd))
     OnMessage(0x201, (wParam, lParam, msg, hwnd) => ActionMouseDown(app, hwnd))
     OnMessage(0x202, (wParam, lParam, msg, hwnd) => ActionMouseUp(app, hwnd))
+    OnMessage(0x203, (wParam, lParam, msg, hwnd) => ActionDoubleClick(app, hwnd))
 }
 
 ActionMouseMove(app, hwnd) {
@@ -219,7 +230,7 @@ ActionMouseDown(app, hwnd) {
 
     app.pressedHwnd := hwnd
     ctrl := app.actionControls[hwnd]
-    ApplyActionColors(ctrl, ctrl._pressFg, ctrl._pressBg)
+    try ctrl.Opt("Background" ctrl._pressBg)
 }
 
 ActionMouseUp(app, hwnd) {
@@ -233,10 +244,22 @@ ActionMouseUp(app, hwnd) {
         return
 
     ctrl := app.actionControls[pressed]
-    if (pressed = hwnd && app.hoverHwnd = hwnd)
-        ApplyActionColors(ctrl, ctrl._hoverFg, ctrl._hoverBg)
-    else
+    if (pressed = hwnd && app.hoverHwnd = hwnd) {
+        try ctrl.Opt("Background" ctrl._hoverBg)
+    } else {
         ApplyActionColors(ctrl, ctrl._normalFg, ctrl._normalBg)
+    }
+}
+
+ActionDoubleClick(app, hwnd) {
+    if !app.actionControls.Has(hwnd)
+        return
+
+    app.pressedHwnd := hwnd
+    ctrl := app.actionControls[hwnd]
+    try ctrl.Opt("Background" ctrl._pressBg)
+    if app.clickActions.Has(hwnd)
+        app.clickActions[hwnd].Call()
 }
 
 ClearHoverControl(app) {
@@ -255,7 +278,6 @@ ClearHoverControl(app) {
 ApplyActionColors(ctrl, fg, bg) {
     try ctrl.SetFont("c" fg)
     try ctrl.Opt("Background" bg)
-    try ctrl.Redraw()
 }
 
 TrackMouseLeave(hwnd) {
@@ -573,8 +595,11 @@ RecordMathHistory(app) {
 
 RefreshCalculatorUi(app) {
     history := app.recalledExpressionPreview != "" ? app.recalledExpressionPreview : CalculatorHistoryLine(app.state)
-    app.controls["history"].Value := history
-    app.controls["display"].Value := CalculatorDisplayValue(app.state)
+    display := CalculatorDisplayValue(app.state)
+    if (app.controls["history"].Value != history)
+        app.controls["history"].Value := history
+    if (app.controls["display"].Value != display)
+        app.controls["display"].Value := display
     if (app.state.error != "")
         app.controls["status"].Value := app.state.error
     else if (app.state.justEvaluated)
