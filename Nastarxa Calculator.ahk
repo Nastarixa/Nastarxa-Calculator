@@ -1,4 +1,4 @@
-﻿#Requires AutoHotkey v2.0
+#Requires AutoHotkey v2.0
 #SingleInstance Force
 Persistent
 
@@ -38,6 +38,7 @@ Hotkey("Esc", (*) => PressClear(App))
 Hotkey("^z", (*) => UndoCalculator(App))
 Hotkey("^+z", (*) => RedoCalculator(App))
 Hotkey("^c", (*) => CopyCalculatorLine(App))
+Hotkey("^v", (*) => PasteCalculator(App))
 Hotkey("^t", (*) => TogglePin(App))
 Hotkey("F1", (*) => ShowHelpWindow(App))
 HotIfWinActive()
@@ -88,25 +89,27 @@ BuildCalculatorGui(app) {
     app.controls["historyButton"].OnEvent("Click", app.controls["historyButton"]._clickHandler)
 
 
-    app.controls["undoButton"] := AddActionText(g, "x70 y166 w42 h30 0x200", "⤺", "FACC15", "111315", "s18")
-    app.controls["undoButton"].SetFont("s17 Bold", "Consolas")
+    app.controls["undoButton"] := AddActionText(g, "x62 y166 w42 h30 0x200", "Undo", "FACC15", "111315", "s8 Bold")
     app.controls["undoButton"]._clickHandler := (*) => UndoCalculator(app)
     app.controls["undoButton"].OnEvent("Click", app.controls["undoButton"]._clickHandler)
 
-    app.controls["redoButton"] := AddActionText(g, "x122 y166 w42 h30 0x200", "⤻", "FACC15", "111315", "s18")
-    app.controls["redoButton"].SetFont("s17 Bold", "Consolas")
+    app.controls["redoButton"] := AddActionText(g, "x106 y166 w42 h30 0x200", "Redo", "FACC15", "111315", "s8 Bold")
     app.controls["redoButton"]._clickHandler := (*) => RedoCalculator(app)
     app.controls["redoButton"].OnEvent("Click", app.controls["redoButton"]._clickHandler)
 
-    app.controls["memoryButton"] := AddActionText(g, "x174 y166 w42 h30", "M", "C084FC", "111315", "s12 Bold")
+    app.controls["memoryButton"] := AddActionText(g, "x150 y166 w42 h30", "M", "C084FC", "111315", "s12 Bold")
     app.controls["memoryButton"]._clickHandler := (*) => ShowMemoryWindow(app)
     app.controls["memoryButton"].OnEvent("Click", app.controls["memoryButton"]._clickHandler)
 
-    app.controls["pinButton"] := AddActionText(g, "x226 y166 w48 h30", "Pin", "E0E7FF", "111315", "s9 Bold")
+    app.controls["copyButton"] := AddActionText(g, "x194 y166 w42 h30", "Copy", "93C5FD", "111315", "s8 Bold")
+    app.controls["copyButton"]._clickHandler := (*) => CopyResult(app)
+    app.controls["copyButton"].OnEvent("Click", app.controls["copyButton"]._clickHandler)
+
+    app.controls["pinButton"] := AddActionText(g, "x238 y166 w42 h30", "Pin", "E0E7FF", "111315", "s9 Bold")
     app.controls["pinButton"]._clickHandler := (*) => TogglePin(app)
     app.controls["pinButton"].OnEvent("Click", app.controls["pinButton"]._clickHandler)
 
-    app.controls["hideButton"] := AddActionText(g, "x284 y166 w42 h30", "Hide", "FCA5A5", "111315", "s8 Bold")
+    app.controls["hideButton"] := AddActionText(g, "x282 y166 w42 h30", "Hide", "FCA5A5", "111315", "s8 Bold")
     app.controls["hideButton"]._clickHandler := (*) => HideMainWindow(app)
     app.controls["hideButton"].OnEvent("Click", app.controls["hideButton"]._clickHandler)
 
@@ -313,11 +316,12 @@ ResizeCalculator(app, width, height) {
     app.controls["preview"].Move(18, 118, rightW, 18)
     app.controls["status"].Move(18, 140, rightW, 20)
     app.controls["historyButton"].Move(18, 166, 42, 30)
-    app.controls["undoButton"].Move(70, 166, 42, 30)
-    app.controls["redoButton"].Move(122, 166, 42, 30)
-    app.controls["memoryButton"].Move(174, 166, 42, 30)
-    app.controls["pinButton"].Move(width - 118, 166, 48, 30)
-    app.controls["hideButton"].Move(width - 60, 166, 42, 30)
+    app.controls["undoButton"].Move(62, 166, 42, 30)
+    app.controls["redoButton"].Move(106, 166, 42, 30)
+    app.controls["memoryButton"].Move(150, 166, 42, 30)
+    app.controls["copyButton"].Move(194, 166, 42, 30)
+    app.controls["pinButton"].Move(238, 166, 42, 30)
+    app.controls["hideButton"].Move(282, 166, 42, 30)
     app.controls["divider"].Move(18, 212, rightW, 1)
 }
 
@@ -467,6 +471,34 @@ CopyCalculatorLine(app) {
     if (A_Clipboard = "")
         A_Clipboard := app.controls["display"].Value
     app.controls["status"].Value := "Copied"
+}
+
+CopyResult(app) {
+    A_Clipboard := CalculatorDisplayValue(app.state)
+    app.controls["status"].Value := "Result copied"
+}
+
+PasteCalculator(app) {
+    normalized := NormalizePastedNumber(A_Clipboard)
+    if (normalized = "")
+        return
+
+    ClearRecallPreview(app)
+    PushUndoSnapshot(app)
+
+    if (app.state.justEvaluated) {
+        app.state.tokens := []
+        app.state.current := normalized
+        app.state.result := ""
+        app.state.justEvaluated := false
+        app.state.error := ""
+    } else {
+        app.state.current := normalized
+        app.state.error := ""
+    }
+
+    RefreshCalculatorUi(app)
+    app.controls["status"].Value := "Pasted"
 }
 
 
@@ -881,6 +913,7 @@ ShowHelpWindow(app) {
         . "Ctrl+Shift+Z       Redo`r`n"
         . "Ctrl+T             Pin always-on-top`r`n"
         . "Ctrl+C             Copy current line`r`n"
+        . "Ctrl+V             Paste number`r`n"
         . "F1                 Help`r`n"
         . "F12                Show / hide calculator`r`n`r`n"
         . "Buttons`r`n"
@@ -888,7 +921,7 @@ ShowHelpWindow(app) {
         . "Hide               Hide the calculator window`r`n"
         . "M                  Memory buttons: MC, MR, M+, M-, MS`r`n"
         . "Pin                Toggle always-on-top`r`n"
-        . "⤺ / ⤻              Undo / Redo`r`n`r`n"
+        . "? / ?              Undo / Redo`r`n`r`n"
         . "Editing`r`n"
         . "Click the display or expression history to edit the expression.`r`n"
         . "History rows select first, then Copy Sel or Load.`r`n`r`n"

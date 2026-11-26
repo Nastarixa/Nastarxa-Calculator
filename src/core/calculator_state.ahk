@@ -308,6 +308,61 @@ NormalizeNumberText(text) {
     return text
 }
 
+NormalizePastedNumber(text) {
+    text := Trim(text)
+    text := StrReplace(text, " ", "")
+    text := StrReplace(text, "`t", "")
+    if (text = "")
+        return ""
+
+    ; Handle common currency/percent-ish wrappers.
+    text := RegExReplace(text, "^[^0-9\-\. ,]+", "")
+    text := RegExReplace(text, "[^0-9\-\. ,]+$", "")
+
+    posComma := InStr(text, ",", , -1)  ; last comma
+    posDot := InStr(text, ".", , -1)      ; last dot
+
+    if (posComma > 0 && posDot > 0) {
+        if (posComma > posDot) {
+            ; comma is decimal separator
+            text := StrReplace(text, ".", "")
+            text := StrReplace(text, ",", ".")
+        } else {
+            ; dot is decimal separator
+            text := StrReplace(text, ",", "")
+        }
+    } else if (posComma > 0 && posDot = 0) {
+        if (InStr(text, ",") != InStr(text, ",", , -1)) {
+            ; multiple commas -> thousands separators
+            text := StrReplace(text, ",", "")
+        } else {
+            parts := StrSplit(text, ",")
+            if (parts.Length = 2 && parts[2] != "" && StrLen(parts[2]) <= 2 && RegExMatch(parts[1], "^-?\d+$")) {
+                text := parts[1] "." parts[2]
+            } else {
+                text := StrReplace(text, ",", "")
+            }
+        }
+    } else if (posDot > 0 && posComma = 0) {
+        if (InStr(text, ".") != InStr(text, ".", , -1)) {
+            ; multiple dots -> thousands separators
+            text := StrReplace(text, ".", "")
+        } else {
+            parts := StrSplit(text, ".")
+            if (parts.Length = 2 && parts[2] != "" && StrLen(parts[2]) > 2 && RegExMatch(parts[1], "^-?\d+$") && RegExMatch(parts[2], "^\d+$")) {
+                ; likely thousands separator like 1.234 (3 digits) -> remove dot
+                text := parts[1] parts[2]
+            }
+            ; otherwise keep as decimal
+        }
+    }
+
+    if !RegExMatch(text, "^-?\d+(\.\d+)?$")
+        return ""
+
+    return text
+}
+
 FormatCalcNumber(value) {
     rounded := Round(value, 10)
     if (Abs(rounded) < 0.0000000001)
