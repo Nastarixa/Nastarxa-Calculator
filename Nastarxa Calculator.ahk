@@ -2,8 +2,11 @@
 #SingleInstance Force
 Persistent
 
+if A_IsCompiled {
+    FileInstall "Calculator.ico", A_ScriptDir "\Calculator.ico", 1
+}
 if FileExist(A_ScriptDir "\Calculator.ico")
-    TraySetIcon "Calculator.ico"
+    TraySetIcon A_ScriptDir "\Calculator.ico"
 
 #Include "src/core/expression_eval.ahk"
 #Include "src/core/calculator_state.ahk"
@@ -64,7 +67,7 @@ InitCalculatorApp() {
 }
 
 BuildCalculatorGui(app) {
-    g := Gui("+Resize +MinSize344x570 +E0x10", "Nastarxa Calculator")
+    g := Gui("+Resize +MinSize344x570 +E0x10", "Nastarxa Calculator v1.2.0")
     g.BackColor := "000000"
     g.SetFont("s10", "Segoe UI")
     app.gui := g
@@ -74,7 +77,9 @@ BuildCalculatorGui(app) {
     app.controls["display"] := g.AddText("x18 y54 w308 h62 Right cF8FAFC Background000000", "0")
     app.controls["display"].SetFont("s32 Bold", "Consolas")
     app.controls["display"].OnEvent("Click", (*) => EditExpression(app))
-    app.controls["status"] := g.AddText("x18 y128 w308 h20 Right c6B7280 Background000000", "Ready")
+    app.controls["preview"] := g.AddText("x18 y118 w308 h18 Right cA3E635 Background000000", "")
+    app.controls["preview"].SetFont("s12", "Consolas")
+    app.controls["status"] := g.AddText("x18 y140 w308 h20 Right c6B7280 Background000000", "Ready")
 
     LoadAppPersistence(app)
 
@@ -305,7 +310,8 @@ ResizeCalculator(app, width, height) {
     rightW := width - 36
     app.controls["history"].Move(18, 18, rightW, 24)
     app.controls["display"].Move(18, 54, rightW, 62)
-    app.controls["status"].Move(18, 128, rightW, 20)
+    app.controls["preview"].Move(18, 118, rightW, 18)
+    app.controls["status"].Move(18, 140, rightW, 20)
     app.controls["historyButton"].Move(18, 166, 42, 30)
     app.controls["undoButton"].Move(70, 166, 42, 30)
     app.controls["redoButton"].Move(122, 166, 42, 30)
@@ -600,6 +606,45 @@ RefreshCalculatorUi(app) {
         app.controls["history"].Value := history
     if (app.controls["display"].Value != display)
         app.controls["display"].Value := display
+
+    preview := ""
+    if (!app.state.justEvaluated && app.state.error = "") {
+        try {
+            tokens := CalculatorExpressionTokens(app.state)
+            ; Drop a trailing operator so incomplete expressions can still preview.
+            while (tokens.Length > 0 && IsOperatorToken(tokens[tokens.Length]))
+                tokens.RemoveAt(tokens.Length)
+
+            if (tokens.Length >= 3) {
+                val := EvaluateExpressionTokens(tokens)
+                temp := AddThousandsSeparators(FormatCalcNumber(val))
+
+                ; Previous running total: expression without the last number/operator.
+                prevTokens := []
+                for _, t in tokens
+                    prevTokens.Push(t)
+                if (prevTokens.Length >= 3) {
+                    prevTokens.RemoveAt(prevTokens.Length)
+                    if (prevTokens.Length > 0 && IsOperatorToken(prevTokens[prevTokens.Length]))
+                        prevTokens.RemoveAt(prevTokens.Length)
+                }
+
+                previousVal := 0
+                if (prevTokens.Length >= 3) {
+                    try previousVal := EvaluateExpressionTokens(prevTokens)
+                } else if (prevTokens.Length = 1 && app.state.result != "" && prevTokens[1] = app.state.result) {
+                    try previousVal := Number(app.state.result)
+                }
+
+                preview := AddThousandsSeparators(FormatCalcNumber(previousVal)) " -> " temp
+            }
+        } catch {
+            preview := ""
+        }
+    }
+    if (app.controls["preview"].Value != preview)
+        app.controls["preview"].Value := preview
+
     if (app.state.error != "")
         app.controls["status"].Value := app.state.error
     else if (app.state.justEvaluated)
@@ -744,7 +789,7 @@ ShowMemoryWindow(app) {
     app.memoryGui.SetFont("s10", "Segoe UI")
     app.memoryGui.controls := Map()
     app.memoryGui.AddText("x16 y14 w250 h24 cC084FC Background101112", "Memory")
-    value := app.memorySet ? FormatCalcNumber(app.memoryValue) : "Empty"
+    value := app.memorySet ? AddThousandsSeparators(FormatCalcNumber(app.memoryValue)) : "Empty"
     app.memoryGui.controls["value"] := app.memoryGui.AddText("x16 y44 w250 h30 cFFFFFF Background181A1D Center 0x200", value)
 
     labels := ["MC", "MR", "M+", "M-", "MS"]
@@ -768,7 +813,7 @@ BindMemoryAction(app, label) {
 }
 
 HandleMemoryAction(app, label) {
-    try value := Number(CalculatorDisplayValue(app.state))
+    try value := Number(NormalizeNumberText(app.state.current))
     catch {
         app.controls["status"].Value := "Memory needs a numeric display"
         return
@@ -802,7 +847,7 @@ HandleMemoryAction(app, label) {
 
     PersistAppState(app)
     if IsObject(app.memoryGui)
-        app.memoryGui.controls["value"].Value := app.memorySet ? FormatCalcNumber(app.memoryValue) : "Empty"
+        app.memoryGui.controls["value"].Value := app.memorySet ? AddThousandsSeparators(FormatCalcNumber(app.memoryValue)) : "Empty"
 }
 
 
@@ -825,7 +870,7 @@ ShowHelpWindow(app) {
     app.helpGui := Gui("+Owner" app.gui.Hwnd, "Calculator Help")
     app.helpGui.BackColor := "101112"
     app.helpGui.SetFont("s10", "Segoe UI")
-    app.helpGui.AddText("x16 y14 w300 h24 cA7D66D Background101112", "Shortcuts and Features")
+    app.helpGui.AddText("x16 y14 w300 h24 cA7D66D Background101112", "Shortcuts and Features (v1.2.0)")
     helpText := ""
         . "Keyboard`r`n"
         . "0-9, ., +, -, *, /  Input numbers/operators`r`n"

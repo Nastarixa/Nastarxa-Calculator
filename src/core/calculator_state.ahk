@@ -156,7 +156,7 @@ CalculatorToggleSign(state) {
 CalculatorDisplayValue(state) {
     if (state.error != "")
         return "Error"
-    return state.current
+    return AddThousandsSeparators(state.current)
 }
 
 CalculatorSetExpressionText(state, text) {
@@ -202,10 +202,10 @@ TokenizeExpressionText(text) {
             continue
         }
 
-        if RegExMatch(SubStr(text, pos), "^-?\d+(?:\.\d+)?", &m) {
+        if RegExMatch(SubStr(text, pos), "^-?[\d,]+(?:\.\d+)?", &m) {
             if (SubStr(m[0], 1, 1) = "-" && previousWasValue)
                 throw Error("Use an operator before a negative value")
-            tokens.Push(m[0])
+            tokens.Push(StrReplace(m[0], ",", ""))
             pos += StrLen(m[0])
             previousWasValue := true
             continue
@@ -289,6 +289,8 @@ DisplayToken(token) {
         case "/":
             return "/"
         default:
+            if RegExMatch(token, "^-?\d+(?:\.\d+)?$")
+                return AddThousandsSeparators(token)
             return token
     }
 }
@@ -298,6 +300,7 @@ IsOperatorToken(token) {
 }
 
 NormalizeNumberText(text) {
+    text := StrReplace(text, ",", "")
     if (SubStr(text, -1) = ".")
         text := SubStr(text, 1, StrLen(text) - 1)
     if (text = "" || text = "-")
@@ -316,6 +319,50 @@ FormatCalcNumber(value) {
     if (SubStr(text, -1) = ".")
         text := SubStr(text, 1, StrLen(text) - 1)
     return text
+}
+
+AddThousandsSeparators(text) {
+    text := Trim(text)
+    if (text = "" || text = "Error")
+        return text
+
+    negative := false
+    if (SubStr(text, 1, 1) = "-") {
+        negative := true
+        text := SubStr(text, 2)
+    }
+
+    if InStr(text, ".") {
+        parts := StrSplit(text, ".")
+        intPart := parts[1]
+        decPart := parts[2]
+    } else {
+        intPart := text
+        decPart := ""
+    }
+
+    intPart := StrReplace(intPart, ",", "")
+    if !RegExMatch(intPart, "^\d+$")
+        return (negative ? "-" : "") text
+
+    chars := StrSplit(intPart)
+    result := ""
+    count := 0
+    Loop chars.Length {
+        idx := chars.Length - A_Index + 1
+        result := chars[idx] result
+        count += 1
+        if (count = 3 && idx > 1) {
+            result := "," result
+            count := 0
+        }
+    }
+
+    if (decPart != "")
+        result .= "." decPart
+    if negative
+        result := "-" result
+    return result
 }
 
 RenderMathHistory(historyItems) {
